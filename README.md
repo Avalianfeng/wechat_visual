@@ -24,21 +24,13 @@
 
 ## 功能特性
 
-- **读新消息**：按联系人轮询，只返回锚点之上的新消息并更新锚点；支持「有红点再读」、直接读当前页等模式。
-- **发消息**：向指定联系人发送文本（先打开聊天再发送），或向当前窗口直接发送。
-- **联系人管理**：通过 `contact_config.json` 配置显示名与 `contact_id` 映射，配合 `assets/contacts/` 头像图做列表/聊天区匹配。
-- **视觉锚点**：每个联系人一条「最后已读」消息 hash，存于 `debug/message_anchor_state.json`，跨进程一致。
-- **可选 OCR**：支持阿里云高精 OCR（需 `ALIYUN_OCR_APPCODE`）或本机 Tesseract。
+按联系人轮询读新消息（锚点之上的才返回并更新锚点）、发消息；`contact_config.json` + `assets/contacts/` 头像做联系人匹配；锚点存 `debug/message_anchor_state.json` 跨进程一致。OCR 可用阿里云（`ALIYUN_OCR_APPCODE`）或 Tesseract。
 
 ---
 
 ## 环境要求
 
-- **系统**：Windows（依赖 pywin32、窗口句柄与截图）
-- **微信**：PC 客户端已登录，窗口存在且未被最小化到不可见
-- **界面**：微信界面为**简体中文**，窗口大小 ≥ 800×600（推荐 1200×800）
-- **Python**：3.9+（见 `requirements.txt`）
-- **运行方式**：需有图形界面，本工具通过 UI 自动化（激活窗口、截图、模拟点击/输入）与微信交互
+Windows；微信 PC 已登录、窗口可见；界面简体中文，窗口 ≥ 800×600；Python 3.9+。需有图形界面（UI 自动化：激活窗口、截图、点击/输入）。
 
 ---
 
@@ -54,43 +46,30 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-（若在 WSL 中开发，可在 Windows 侧 Python 环境下安装依赖，运行时需在 Windows 图形环境下执行。）
-
 ### 2. 配置文件
 
-- **环境变量**：在项目根目录创建 `.env`（不会提交到 Git），例如：
-  ```ini
-  WECHAT_ME_CONTACT=你的微信昵称或配置中的显示名
-  ALIYUN_OCR_APPCODE=你的阿里云OCR AppCode
-  ```
-  未配置 `ALIYUN_OCR_APPCODE` 时会回退到 Tesseract（需本机安装）。
+项目根建 `.env`，例如：
+```ini
+WECHAT_ME_CONTACT=你的微信昵称或配置中的显示名
+ALIYUN_OCR_APPCODE=你的阿里云OCR AppCode
+```
+无 `ALIYUN_OCR_APPCODE` 时回退到 Tesseract。
 
-- **联系人配置**：复制示例并改为自己的联系人：
-  ```bash
-  copy contact_config.example.json contact_config.json
-  ```
-  编辑 `contact_config.json`：在 `contact_mappings` 中填写「显示名 → user_id / contact_id」，在 `enabled_contacts` 中列出要启用的显示名。`contact_id` 需与 `assets/contacts/` 下头像文件名一致（如 `cylf_id_策月帘风.png` 中的 `cylf_id`）。
+`copy contact_config.example.json contact_config.json`，再编辑：`contact_mappings` 里写显示名 → user_id / contact_id，`enabled_contacts` 里列启用名；`contact_id` 与 `assets/contacts/` 下头像文件名对应（如 `cylf_id_策月帘风.png` → `cylf_id`）。
 
 ### 3. 资源与窗口
 
-- 确保 `assets/templates/` 下必需模板图存在（见 `config.py` 中 `REQUIRED_TEMPLATES`）。
-- 微信 PC 已登录，窗口可见；可选将窗口固定为配置中的大小（如 1200×800）。
+`assets/templates/` 下必需模板见 `config.py` 的 `REQUIRED_TEMPLATES`。微信已登录、窗口可见即可。
 
 ### 4. 首次运行
 
-从**项目根目录**执行（以便加载 `.env` 与 `contact_config.json`）：
+在项目根执行：
 
 ```bash
 python -m wechat.cli contacts
 ```
 
-若能看到配置的联系人列表，说明配置与路径正常。再试：
-
-```bash
-python -m wechat.cli read 某个显示名
-```
-
-或 `send 某个显示名 你好`。详细命令见 [CLI 命令一览](#cli-命令一览)。
+能看到联系人列表即正常。再试 `read 某个显示名` 或 `send 某个显示名 你好`。命令见 [CLI 命令一览](#cli-命令一览)。
 
 ---
 
@@ -98,11 +77,11 @@ python -m wechat.cli read 某个显示名
 
 | 配置 | 说明 |
 |------|------|
-| **`.env`** | 本地环境变量，不提交。常用：`WECHAT_ME_CONTACT`、`ALIYUN_OCR_APPCODE`；可选 `WECHAT_WATCH_INTERVAL_SECONDS`（watch 间隔秒数）。 |
-| **`contact_config.json`** | 联系人映射与启用列表；由 `contact_config.example.json` 复制后修改，不提交。 |
-| **`config.py`** | 窗口大小、模板路径、锚点文件路径、校验规则等；按需修改。 |
-| **`assets/templates/`** | 必需/可选模板图；缺必需模板时 `validate_config` 会硬失败。 |
-| **`assets/contacts/`** | 各联系人头像图，用于匹配左侧列表与聊天区头像。 |
+| `.env` | `WECHAT_ME_CONTACT`、`ALIYUN_OCR_APPCODE`；可选 `WECHAT_WATCH_INTERVAL_SECONDS` |
+| `contact_config.json` | 联系人映射与启用列表，从 example 复制后改 |
+| `config.py` | 窗口、模板路径、锚点文件、校验 |
+| `assets/templates/` | 模板图，缺必需项时校验失败 |
+| `assets/contacts/` | 联系人头像，匹配列表与聊天区 |
 
 ---
 
@@ -124,16 +103,11 @@ python -m wechat.cli read 某个显示名
 | `watch <contact>` | 持续监视该联系人新消息（hash 检测），有新消息读出后退出。 |
 | `help [topic]` | 详细帮助；topic 可选 overview、prereq、read、send、open 等。 |
 
-**全局选项**：子命令前加 `--debug` 可输出详细日志。
+`--debug` 输出详细日志。从项目根执行：`python -m wechat.cli <子命令> [参数...]`。`read`/`send`/`current` 等执行前会做 `validate_config(strict=False)`，不通过则退出。
 
-推荐从项目根执行：`python -m wechat.cli <子命令> [参数...]`。执行 `read`/`send`/`current` 等前会做 `validate_config(strict=False)`，未通过则退出并打印错误。
+通过**定时轮询** `python -m wechat.cli check-new --no-open` 检测新消息（仅扫描不打开聊天），对有红点的联系人执行 `read-direct <联系人>` 并输出读到的内容，可常驻、稳定地持续获取新消息。
 
-### 脚本/机器人集成要点
-
-- **进程模型**：每次调用为独立进程，无常驻服务；锚点与去重依赖本地文件 `debug/message_anchor_state.json`，跨进程一致。
-- **推荐用法**：轮询新消息用 `read <contact>`；先扫红点再读可用 `check-new` 或 `read-new`；发消息用 `send <contact> <text>`；打开聊天用 `open <contact> --method search`。
-- **工作目录**：设为项目根，以便加载 `.env`、`contact_config.json` 和 `assets/`。
-- **返回码**：成功 0，失败 1；错误信息打印到 stdout，可根据返回码与输出做重试或告警。更多细节见 `python -m wechat.cli help prereq`。
+集成时：工作目录设为项目根；成功返回 0、失败 1，stdout 为输出与错误信息。`python -m wechat.cli help prereq` 可查前置条件与返回码。
 
 ---
 
@@ -158,15 +132,13 @@ wechat/
 └── test/                   # 单元与 E2E 测试
 ```
 
-入口为 `cli.py`；调用前会加载 `.env` 与 `contact_config.json`。
+入口 `cli.py`，会加载 `.env` 与 `contact_config.json`。
 
 ---
 
 ## 核心逻辑与依赖
 
-- **锚点**：每个联系人一条「最后已读消息」hash，存于 `debug/message_anchor_state.json`；首次读以当前最下一条为锚点，之后只返回锚点之上的新消息。
-- **消息流**：`message_channel.poll(contact)`：打开聊天 → 视觉指纹判断是否有新消息 → MessageReader 读到锚点 → 过滤、去重 → 更新锚点写回。
-- **依赖层次**：config/models → contact_mapper/screen/locator/ocr/actions → chat_state/element_locator/flows → message_reader/controller/message_channel → cli。详见 [依赖层次与文件职责](#依赖层次与文件职责) 及 **LOCATOR_LOGIC.md**。
+锚点：每联系人一条「最后已读」hash 存 `debug/message_anchor_state.json`，首次读取当前最下一条为锚点，之后只返回锚点之上。消息流：打开聊天 → 视觉指纹判新消息 → MessageReader 读到锚点 → 过滤去重 → 写回。依赖层次见下表与 **LOCATOR_LOGIC.md**。
 
 ### 依赖层次与文件职责
 
@@ -197,32 +169,16 @@ wechat/
 
 ## 测试与检查
 
-- **test/**：单元/逻辑测试（mock）：`test_flow.py`、`test_config_validation.py`、`test_message_reader_semantics.py`、`test_message_channel_robustness.py` 等。
-- **test_flow_atomicity.py**：真实窗口 E2E，建议 `python -m wechat.test.test_flow_atomicity`。
-- **PROJECT_CHECK_ORDER.md**：Phase 0–4.5 检查顺序与结论。
+test/ 下单元与 mock 测试；`test_flow_atomicity.py` 为真实窗口 E2E（`python -m wechat.test.test_flow_atomicity`）。PROJECT_CHECK_ORDER.md 为 Phase 0–4.5 检查顺序。
 
 ---
 
 ## 相关文档
 
-- **PROJECT_CHECK_ORDER.md**：检查顺序、Phase 清单、可拓展 CLI 建议。
-- **LOCATOR_LOGIC.md**：元素定位顺序、ROI 与约束、回退逻辑与排查表。
+PROJECT_CHECK_ORDER.md（检查顺序、Phase、CLI 拓展）；LOCATOR_LOGIC.md（元素定位、ROI、回退与排查）。
 
 ---
 
 ## 上传到 GitHub
 
-1. **不要提交的内容**（已由 `.gitignore` 排除）：
-   - `.env`（环境变量与密钥）
-   - `contact_config.json`（你的联系人配置）
-   - `debug/` 下生成的 `*.json`、`*.png`（锚点与调试输出）
-   - `__pycache__/`、虚拟环境、IDE 与系统临时文件
-
-2. **首次推送前建议**：
-   - 在项目根执行 `git status` 确认没有误加入 `.env` 或 `contact_config.json`。
-   - 保留并提交 `contact_config.example.json`，方便他人复制为 `contact_config.json` 后修改。
-   - 确保 `assets/templates/` 与 `assets/contacts/` 中**不包含个人隐私**后再提交；若仅作示例，可用占位图或说明在 README 中注明需自行准备。
-
-3. **仓库描述建议**：可注明「Windows 微信 PC 端 UI 自动化：读消息/发消息，适合脚本与机器人集成」。
-
-如需更详细的 CLI 返回码、机器人/后台调用方式、前置条件表，请运行：`python -m wechat.cli help` 或 `python -m wechat.cli help prereq`。
+首次推送前在项目根执行 `git status` 确认无误。仓库描述可写：Windows 微信 PC 端 UI 自动化，读消息/发消息，适合脚本与机器人集成。
