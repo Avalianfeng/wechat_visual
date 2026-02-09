@@ -18,7 +18,6 @@
 - [开发与修改指南](#开发与修改指南)
 - [测试与检查](#测试与检查)
 - [相关文档](#相关文档)
-- [上传到 GitHub](#上传到-github)
 
 ---
 
@@ -177,8 +176,3 @@ test/ 下单元与 mock 测试；`test_flow_atomicity.py` 为真实窗口 E2E（
 
 PROJECT_CHECK_ORDER.md（检查顺序、Phase、CLI 拓展）；LOCATOR_LOGIC.md（元素定位、ROI、回退与排查）。
 
----
-
-## 上传到 GitHub
-
-首次推送前在项目根执行 `git status` 确认无误。仓库描述可写：Windows 微信 PC 端 UI 自动化，读消息/发消息，适合脚本与机器人集成。
