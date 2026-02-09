@@ -1,0 +1,25 @@
+# 微信自动化模块依赖（Windows 桌面环境）
+# 建议在 WSL 内用 pip 安装：cd 到项目目录后 pip install -r requirements.txt
+
+# 图形/自动化（当前 PyPI/镜像多为 0.9.x，无 1.0 时用 0.9.50+）
+pyautogui>=0.9.50
+pyperclip>=1.8.0
+
+# 图像处理与定位
+opencv-python>=4.5.0
+numpy>=1.19.0
+Pillow>=9.0.0
+# 感知哈希（用于 has_new_message 视觉指纹检测新消息；未安装时该功能不可用）
+imagehash>=4.0.0
+
+# 环境变量管理（支持 .env 文件）
+python-dotenv>=1.0.0
+
+# OpenAI 兼容客户端（用于阿里云 DashScope OCR）
+openai>=1.6.0
+
+# Windows API（仅 Windows 有效；在 WSL 内运行需通过 Windows 侧 Python 或 WSLg）
+pywin32>=305
+
+# OCR（可选，用于文字识别；需另行安装 Tesseract 本体）
+pytesseract>=0.3.10

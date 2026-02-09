@@ -1,0 +1,7 @@
+{
+  "contact_mappings": {
+    "显示名1": { "user_id": 1, "contact_id": "xxx_id" },
+    "显示名2": { "user_id": 2, "contact_id": "yyy_id" }
+  },
+  "enabled_contacts": ["显示名1", "显示名2"]
+}

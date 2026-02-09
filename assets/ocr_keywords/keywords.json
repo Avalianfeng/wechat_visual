@@ -1,0 +1,22 @@
+{
+  "search_box": {
+    "keywords": ["搜索", "Search"],
+    "description": "搜索框关键词"
+  },
+  "send_button": {
+    "keywords": ["发送", "Send"],
+    "description": "发送按钮关键词"
+  },
+  "input_box": {
+    "keywords": ["输入", "输入消息"],
+    "description": "输入框关键词"
+  },
+  "chat_list": {
+    "keywords": ["聊天", "会话"],
+    "description": "聊天列表关键词"
+  },
+  "new_message_indicator": {
+    "keywords": ["新消息", "未读"],
+    "description": "新消息指示器关键词"
+  }
+}

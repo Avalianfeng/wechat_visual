@@ -1,0 +1,53 @@
+# 模板图片目录
+# 
+# 命名规范：
+# 
+# 1. 基础命名格式：{element_name}_{variant}.png
+#    - element_name: 元素名称（英文，小写，下划线分隔）
+#    - variant: 变体标识（可选）
+# 
+# 2. 变体标识：
+#    - _light: 亮色主题版本
+#    - _dark: 暗色主题版本
+#    - _v1, _v2: 不同微信版本
+#    - _small, _large: 不同尺寸
+# 
+# 3. 必需模板（基础版本）：
+#    - search_icon.png - 搜索框图标（放大镜图标）
+#    - search_bar.png - 搜索框（输入框区域）
+#    - input_box_anchor.png - 聊天输入框锚点（表情按钮或输入框边缘）
+#    - send_button.png - 发送按钮
+#    - chat_list_item.png - 聊天列表项（用于定位联系人）
+#    - message_bubble.png - 消息气泡（用于定位消息）
+# 
+# 4. 可选模板（变体）：
+#    - search_icon_light.png - 亮色主题搜索图标
+#    - search_icon_dark.png - 暗色主题搜索图标
+#    - input_box_anchor_light.png - 亮色主题输入框锚点
+#    - input_box_anchor_dark.png - 暗色主题输入框锚点
+# 
+# 5. 模板图片要求：
+#    - 格式：PNG（支持透明背景）
+#    - 尺寸：尽量小，只包含关键特征（推荐20x20到50x50像素）
+#    - 内容：只截取UI元素本身，不要包含周围区域
+#    - 背景：如果元素有固定背景色，可以包含；否则使用透明背景
+# 
+# 6. 截图技巧：
+#    - 使用微信窗口截图工具或系统截图工具
+#    - 确保DPI缩放为100%
+#    - 确保截图清晰，无模糊
+#    - 如果元素有动画，选择静止状态截图
+# 
+# 7. 模板更新：
+#    - 微信版本更新后，可能需要更新模板
+#    - 如果定位失败，检查模板是否仍然有效
+#    - 保存失败的截图到debug目录，用于分析
+# 
+# 示例文件结构：
+# templates/
+#   ├── search_icon.png          # 基础搜索图标
+#   ├── search_icon_light.png    # 亮色主题
+#   ├── search_icon_dark.png     # 暗色主题
+#   ├── input_box_anchor.png     # 输入框锚点
+#   ├── send_button.png          # 发送按钮
+#   └── ...
