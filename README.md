@@ -114,8 +114,8 @@ python -m wechat.cli contacts
 
 ```
 wechat/
-├── .env                    # 本地环境变量（不提交）
-├── contact_config.json     # 联系人配置（不提交，见 example）
+├── .env                    # 本地环境变量
+├── contact_config.json     # 联系人配置（见 example）
 ├── contact_config.example.json
 ├── requirements.txt
 ├── config.py, models.py, contact_mapper.py
@@ -127,7 +127,7 @@ wechat/
 │   ├── templates/          # 搜索框、发送按钮、头像等模板图
 │   ├── contacts/           # 各联系人头像图
 │   └── ocr_keywords/
-├── debug/                  # 运行时生成（锚点、视觉状态等，不提交）
+├── debug/                  # 运行时生成（锚点、视觉状态等）
 └── test/                   # 单元与 E2E 测试
 ```
 

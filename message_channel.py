@@ -486,6 +486,20 @@ class WeChatMessageChannel:
             if contact not in self._seen_hashes:
                 self._seen_hashes[contact] = set()
             self._seen_hashes[contact].add(message_hash)
+
+            # 发送成功后，自动刷新该联系人的 UI hash（视觉基线），
+            # 等价于对当前窗口做一次轻量级的 update-hash：
+            try:
+                h = self.wechat.get_current_chat_hash(contact)
+                if h:
+                    self._save_visual_state(contact, h)
+                    logger.info(
+                        f"[MessageChannel] 已在发送后更新 UI hash: contact={contact}, hash={h[:16]}..."
+                    )
+            except Exception as e:
+                # 刷新视觉 hash 失败不影响发送结果，只做告警日志
+                logger.warning(f"[MessageChannel] 发送后更新 UI hash 失败: {e}")
+
             logger.info(f"消息已发送: {contact} -> {text[:30]}...")
             return True
         else:
