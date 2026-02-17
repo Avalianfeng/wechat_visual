@@ -91,9 +91,10 @@ python -m wechat.cli contacts
 | `read <contact>` | **推荐**：轮询该联系人的新消息并更新锚点。 |
 | `read` | 用当前窗口联系人轮询并打印；**不更新锚点**，非幂等。 |
 | `read-new` | 扫描新消息红点，对有红点的联系人逐个打开并读新消息。 |
-| `read-direct <contact>` | 直接读当前可见页消息，不比对锚点、不去重，速度快。 |
+| `read-direct <contact>` | 直接读新消息（用信息锚点做停止，读后自动更新锚点与画面 hash）。 |
 | `send <contact> <text>` | 向指定联系人发送文本。 |
 | `send-current <text>` | 向当前聊天窗口直接发送，不切换联系人。 |
+| `send-file <contact> <path>` | 向指定联系人发送文件/图片（统一复制粘贴，支持 JPG/PNG/PDF 等）。 |
 | `contacts` | 列出已配置联系人。 |
 | `current` | 打印当前聊天窗口联系人名称。 |
 | `check-new [--no-open]` | 扫描红点并输出有红点的联系人；默认会打开，`--no-open` 仅扫描。 |

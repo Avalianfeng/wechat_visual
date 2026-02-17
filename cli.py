@@ -68,9 +68,10 @@ _DETAILED_HELP = {
   - 有红点则打开并读：python -m wechat.cli read-new
   - 发送：python -m wechat.cli send <contact> <text>
   - 直接向当前窗口发送：python -m wechat.cli send-current <text>
+  - 发送文件：python -m wechat.cli send-file <contact> <路径>
   - 打开：python -m wechat.cli open <contact> --method search
   - 检查是否有新消息红点：python -m wechat.cli check-new（默认打开有红点联系人；加 --no-open 仅扫描）
-  - 无 hash 直接读当前页：python -m wechat.cli read-direct <contact>
+  - 直接读新消息（用锚点停止，读后更新锚点与画面 hash）：python -m wechat.cli read-direct <contact>
   - 手动刷新视觉 hash：python -m wechat.cli update-hash
   - 持续监视某个联系人：python -m wechat.cli watch <contact>
 """,
@@ -154,6 +155,27 @@ send-current：向「当前聊天窗口」直接发送文本（不检查联系�
   - 0：发送成功
   - 1：失败（无法激活窗口 / 找不到输入框 / 粘贴或发送出错）
 """,
+    "send-file": """\
+send-file：向指定联系人发送文件（统一复制粘贴，支持图片与普通文件）
+
+用法：
+  python -m wechat.cli send-file <contact> <路径>
+
+行为：
+  - 会先通过 open_chat(contact) 确保窗口切到目标联系人
+  - 定位输入框并点击，按类型复制到剪贴板（CF_DIB/CF_HDROP）
+  - 粘贴（Ctrl+V）后按 Enter 发送
+  - 发送成功后自动更新 UI hash
+
+支持：JPG/PNG/PDF/DOCX/MD 等，路径含中文或空格时建议加引号
+
+返回码：
+  - 0：发送成功
+  - 1：发送失败（文件不存在、定位失败等）
+
+示例：
+  python -m wechat.cli send-file 张三 "D:\\学习\\人像摄影.md"
+""",
     "contacts": """\
 contacts：列出 contact_config.json 中配置的联系人
 
@@ -188,13 +210,14 @@ check-new：扫描新消息红点，输出存在红点的联系人名称
   - 1：配置/窗口/定位异常
 """,
     "read-direct": """\
-read-direct：无 hash 检查的直接读（需指定联系人）
+read-direct：直接读当前可见页的新消息（用信息锚点做停止，读后自动更新锚点与画面 hash）
 
 用法：
   python -m wechat.cli read-direct <联系人>
 
 行为：
-  - 打开该联系人聊天窗口后，直接读取当前可见页的消息，不做锚点比对、不去重，速度快。
+  - 打开该联系人聊天窗口后，从底部开始读，遇到已有锚点（信息 hash）即停止，只返回新消息。
+  - 无锚点时读满当前页；读完后自动更新该联系人的信息锚点与画面区域 hash，下次只读增量。
   - 输出格式与 read 相同：[联系人] role: content，顺序为先发→后发。
 
 返回码：
@@ -343,7 +366,7 @@ def cmd_send(args):
 def cmd_send_current(args):
     """
     向当前聊天窗口直接发送文本（不检查联系人、不调用 open_chat）。
-
+    
     适合：
       - 已经手动把微信窗口切到目标聊天时的快速发送。
     不适合：
@@ -373,6 +396,38 @@ def cmd_send_current(args):
         return 1
     except Exception as e:
         logger.exception("send-current 失败")
+        print(f"错误: {e}")
+        return 1
+
+
+def cmd_send_file(args):
+    """向指定联系人发送文件/图片（统一复制粘贴）。返回码：0 成功，1 失败。"""
+    from config import WeChatAutomationConfig, ConfigValidationError
+    try:
+        WeChatAutomationConfig.validate_config(strict=False)
+    except ConfigValidationError as e:
+        print(f"配置验证失败: {e}")
+        return 1
+
+    from controller import WeChatController
+    from message_channel import WeChatMessageChannel
+
+    contact = args.contact
+    file_path = args.file_path
+    if not contact or not file_path:
+        print("用法: python -m wechat.cli send-file <联系人> <文件路径>")
+        return 1
+    try:
+        controller = WeChatController()
+        channel = WeChatMessageChannel(controller)
+        ok = channel.send_file(contact, file_path)
+        if ok:
+            print(f"已发送给 {contact}: {file_path}")
+            return 0
+        print("发送文件失败")
+        return 1
+    except Exception as e:
+        logger.exception("send-file 失败")
         print(f"错误: {e}")
         return 1
 
@@ -546,7 +601,7 @@ def cmd_check_new(args):
 
 
 def cmd_read_direct(args):
-    """无 hash 检查的直接读：指定联系人，打开后直接读当前页消息（不比对锚点），速度快。返回码：0 成功，1 异常。"""
+    """直接读新消息：用信息锚点做停止条件，读后更新锚点与画面 hash。返回码：0 成功，1 异常。"""
     from config import WeChatAutomationConfig, ConfigValidationError
     try:
         WeChatAutomationConfig.validate_config(strict=False)
@@ -755,7 +810,7 @@ def cmd_update_hash(args):
 
 
 def cmd_help(args):
-    """输出详细帮助（比 -h 更完整）。topic 可选：overview, prereq, read, read-new, read-direct, send, send-current, contacts, current, check-new, open, update-hash, watch。默认 overview。"""
+    """输出详细帮助（比 -h 更完整）。topic 可选：overview, prereq, read, read-new, read-direct, send, send-current, send-file, contacts, current, check-new, open, update-hash, watch。默认 overview。"""
     topic = (args.topic or "overview").strip()
     text = _DETAILED_HELP.get(topic)
     if not text:
@@ -789,6 +844,7 @@ def main():
   python -m wechat.cli check-new      # 扫描红点，输出有红点的联系人名（每行一个）
   python -m wechat.cli open 张三 --method list    # 打开张三聊天（列表头像方式）
   python -m wechat.cli open 张三 --method search  # 打开张三聊天（搜索框方式，推荐）
+  python -m wechat.cli send-file 张三 <路径>  # 发送文件或图片
   python -m wechat.cli update-hash    # 手动更新当前联系人的视觉 hash（含截图与状态）
   python -m wechat.cli help [topic]    # 详细帮助（topic: overview/prereq/read/...）
   python -m wechat.cli watch 张三     # 持续监视张三的新消息（基于 hash 检测）
@@ -821,6 +877,12 @@ def main():
     p_send_cur.add_argument("text", help="消息内容")
     p_send_cur.set_defaults(func=cmd_send_current)
 
+    # send-file
+    p_send_file = subparsers.add_parser("send-file", help="向指定联系人发送文件（支持图片与普通文件）")
+    p_send_file.add_argument("contact", help="联系人名称")
+    p_send_file.add_argument("file_path", help="文件路径")
+    p_send_file.set_defaults(func=cmd_send_file)
+
     # contacts
     p_contacts = subparsers.add_parser("contacts", help="列出已配置的联系人")
     p_contacts.set_defaults(func=cmd_contacts)
@@ -851,7 +913,7 @@ def main():
     # read-direct
     p_read_direct = subparsers.add_parser(
         "read-direct",
-        help="无 hash 检查的直接读：指定联系人，打开后读当前页消息（不比对锚点），速度快",
+        help="直接读新消息（用锚点停止，读后更新锚点与画面 hash）",
     )
     p_read_direct.add_argument("contact", help="联系人名称")
     p_read_direct.set_defaults(func=cmd_read_direct)
@@ -872,7 +934,7 @@ def main():
         "topic",
         nargs="?",
         default="overview",
-        help="帮助主题：overview/prereq/read/read-new/read-direct/send/send-current/contacts/current/check-new/open/update-hash/watch",
+        help="帮助主题：overview/prereq/read/read-new/read-direct/send/send-current/send-file/contacts/current/check-new/open/update-hash/watch",
     )
     p_help.set_defaults(func=cmd_help)
 

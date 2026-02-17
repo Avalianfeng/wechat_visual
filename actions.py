@@ -28,12 +28,16 @@ import random
 import time
 import logging
 from typing import Optional
+from pathlib import Path
+from io import BytesIO
 import pyautogui
 import pyperclip
 import win32gui
 import win32con
+import win32clipboard
 import cv2
 import numpy as np
+from PIL import Image
 
 # 支持相对导入（作为模块）和绝对导入（直接运行）
 try:
@@ -826,5 +830,412 @@ def scroll_chat_area_up(
         raise
     except Exception as e:
         error_msg = f"滚动失败: {str(e)}"
+        logger.error(error_msg)
+        raise ActionError(error_msg)
+
+
+def copy_image_to_clipboard(image_path: str) -> bool:
+    """
+    将图片文件复制到剪贴板（使用 win32clipboard）
+    
+    使用 CF_DIB 格式（Device Independent Bitmap），将图片转换为 BMP 格式
+    并去除文件头（14字节）后写入剪贴板。
+    
+    Args:
+        image_path: 图片文件路径
+    
+    Returns:
+        是否成功
+    
+    Raises:
+        ActionError: 操作失败（文件不存在、格式不支持等）
+    """
+    try:
+        image_path_obj = Path(image_path)
+        if not image_path_obj.exists():
+            raise ActionError(f"图片文件不存在: {image_path}")
+        
+        # 使用 PIL 打开图片
+        try:
+            image = Image.open(image_path)
+        except Exception as e:
+            raise ActionError(f"无法打开图片文件: {image_path}, 错误: {e}")
+        
+        # 转换为 RGB 格式（确保兼容性）
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        
+        # 保存为 BMP 格式到内存
+        output = BytesIO()
+        image.save(output, "BMP")
+        data = output.getvalue()
+        output.close()
+        
+        # 去除 BMP 文件头（14字节），只保留 DIB 数据
+        if len(data) < 14:
+            raise ActionError(f"BMP 数据无效: {image_path}")
+        dib_data = data[14:]
+        
+        # 写入剪贴板
+        try:
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_DIB, dib_data)
+            win32clipboard.CloseClipboard()
+            logger.debug(f"图片已复制到剪贴板: {image_path}")
+            return True
+        except Exception as e:
+            try:
+                win32clipboard.CloseClipboard()
+            except:
+                pass
+            raise ActionError(f"写入剪贴板失败: {e}")
+    
+    except ActionError:
+        raise
+    except Exception as e:
+        error_msg = f"复制图片到剪贴板失败: {str(e)}"
+        logger.error(error_msg)
+        raise ActionError(error_msg)
+
+
+# 图片扩展名（用于判断是否走 CF_DIB 路径）
+_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif"})
+
+
+def _is_image_path(path: str) -> bool:
+    """根据扩展名判断是否为图片文件"""
+    ext = Path(path).suffix.lower()
+    return ext in _IMAGE_EXTENSIONS
+
+
+def copy_file_to_clipboard(file_path: str) -> bool:
+    """
+    将文件路径复制到剪贴板（使用 CF_HDROP）
+    
+    适用于非图片文件（.pdf、.docx、.md 等），粘贴时作为文件发送。
+    图片请使用 copy_image_to_clipboard。
+    
+    Args:
+        file_path: 文件路径
+    
+    Returns:
+        是否成功
+    """
+    try:
+        file_path_obj = Path(file_path)
+        if not file_path_obj.exists():
+            raise ActionError(f"文件不存在: {file_path}")
+        abs_path = str(file_path_obj.resolve())
+        
+        # 构造 CF_HDROP 格式：DROPFILES 头 + 以双 \0 结尾的 Unicode 路径
+        import ctypes
+        from ctypes import wintypes
+
+        GMEM_MOVEABLE = 0x0002
+        CF_HDROP = 15
+
+        # DROPFILES: pFiles(4) + pt(8) + fNC(4) + fWide(4) = 20 bytes
+        # pFiles = 20 表示文件列表从结构体后开始，fWide = 1 表示 Unicode
+        dropfiles_header = (
+            (20).to_bytes(4, "little")  # pFiles
+            + (0).to_bytes(8, "little")  # pt
+            + (0).to_bytes(4, "little")  # fNC
+            + (1).to_bytes(4, "little")  # fWide
+        )
+        path_bytes = (abs_path + "\0\0").encode("utf-16-le")
+        data = dropfiles_header + path_bytes
+
+        kernel32 = ctypes.windll.kernel32
+        # 64 位 Windows 下必须显式声明类型，否则句柄/指针截断或 OverflowError
+        kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+        kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalUnlock.restype = wintypes.BOOL
+        kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalFree.restype = wintypes.HGLOBAL
+
+        size = len(data)
+        h_global = kernel32.GlobalAlloc(GMEM_MOVEABLE, size)
+        if not h_global:
+            raise ActionError("GlobalAlloc 失败")
+        ptr = kernel32.GlobalLock(h_global)
+        if not ptr:
+            raise ActionError("GlobalLock 失败")
+        try:
+            ctypes.memmove(ptr, data, size)
+        finally:
+            kernel32.GlobalUnlock(h_global)
+        
+        try:
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(CF_HDROP, h_global)
+            win32clipboard.CloseClipboard()
+            logger.debug(f"文件已复制到剪贴板(CF_HDROP): {file_path}")
+            return True
+        except Exception as e:
+            try:
+                win32clipboard.CloseClipboard()
+            except Exception:
+                pass
+            kernel32.GlobalFree(h_global)
+            raise ActionError(f"写入剪贴板失败: {e}")
+    except ActionError:
+        raise
+    except Exception as e:
+        logger.error("复制文件到剪贴板失败: %s", e)
+        raise ActionError(f"复制文件到剪贴板失败: {e}")
+
+
+def copy_file_or_image_to_clipboard(file_path: str) -> bool:
+    """
+    根据文件类型将文件/图片复制到剪贴板
+    - 图片：使用 CF_DIB
+    - 其他文件：使用 CF_HDROP
+    """
+    if _is_image_path(file_path):
+        return copy_image_to_clipboard(file_path)
+    return copy_file_to_clipboard(file_path)
+
+
+def paste_file_or_image(hwnd: Optional[int] = None, delay: Optional[float] = None) -> bool:
+    """
+    粘贴剪贴板中的文件或图片（Ctrl+V）
+    与 paste_image 相同，用于统一文件/图片发送流程。
+    """
+    return paste_image(hwnd=hwnd, delay=delay)
+
+
+def paste_image(hwnd: Optional[int] = None, delay: Optional[float] = None) -> bool:
+    """
+    粘贴图片（Ctrl+V）
+    
+    确保窗口在前台后执行 Ctrl+V 粘贴剪贴板中的图片。
+    
+    Args:
+        hwnd: 窗口句柄，None则自动查找
+        delay: 粘贴后延迟（秒），None则使用人类化延迟
+    
+    Returns:
+        是否成功
+    
+    Raises:
+        WindowNotFoundError: 窗口未找到
+        ActionError: 粘贴失败
+    """
+    try:
+        if hwnd is None:
+            hwnd = _get_hwnd()
+        
+        # 确保窗口在前台（严格验证）
+        ensure_wechat_foreground(hwnd)
+        
+        # 执行 Ctrl+V 粘贴
+        pyautogui.hotkey('ctrl', 'v')
+        
+        # 延迟（等待图片加载）
+        if delay is None:
+            human_delay(0.5, 1.0)  # 图片加载需要更长时间
+        else:
+            time.sleep(delay)
+        
+        logger.debug("粘贴图片成功")
+        return True
+    
+    except WindowNotFoundError:
+        raise
+    except Exception as e:
+        error_msg = f"粘贴图片失败: {str(e)}"
+        logger.error(error_msg)
+        raise ActionError(error_msg)
+
+
+def select_file_via_dialog(file_path: str, timeout: float = 5.0) -> bool:
+    """
+    通过 Windows API 操作文件选择对话框选择文件
+    
+    查找文件选择对话框窗口，在文件名输入框中输入完整路径，
+    然后点击"打开"按钮或按 Enter。
+    若无法定位到输入框，则使用剪贴板粘贴路径 + Enter 作为回退。
+    
+    Args:
+        file_path: 文件完整路径
+        timeout: 超时时间（秒）
+    
+    Returns:
+        是否成功
+    
+    Raises:
+        ActionError: 操作失败（对话框未找到、文件不存在等）
+    """
+    try:
+        file_path_obj = Path(file_path)
+        if not file_path_obj.exists():
+            raise ActionError(f"文件不存在: {file_path}")
+        
+        # 转换为绝对路径
+        abs_path = str(file_path_obj.resolve())
+        
+        # 查找文件选择对话框窗口
+        # 常见的对话框标题：打开、选择文件、选择要上传的文件等
+        dialog_titles = ["打开", "选择文件", "选择要上传的文件", "Open", "Select File"]
+        dialog_hwnd = None
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            for title in dialog_titles:
+                hwnd = win32gui.FindWindow(None, title)
+                if hwnd:
+                    dialog_hwnd = hwnd
+                    logger.debug(f"找到文件选择对话框: {title}")
+                    break
+            if dialog_hwnd:
+                break
+            time.sleep(0.2)
+        
+        if not dialog_hwnd:
+            raise ActionError(f"未找到文件选择对话框（超时 {timeout} 秒）")
+        
+        # 激活对话框窗口（必须，确保后续按键发到对话框）
+        try:
+            win32gui.SetForegroundWindow(dialog_hwnd)
+            time.sleep(0.3)
+        except Exception as e:
+            logger.warning(f"激活对话框窗口失败: {e}")
+        
+        # 查找文件名输入框：Edit 或 ComboBox 内的 Edit
+        edit_hwnd = None
+        common_edit_ids = [0x047c, 0x046c, 0x0000]
+        
+        for edit_id in common_edit_ids:
+            try:
+                ctrl_hwnd = win32gui.GetDlgItem(dialog_hwnd, edit_id)
+                if not ctrl_hwnd:
+                    continue
+                class_name = win32gui.GetClassName(ctrl_hwnd)
+                if class_name == "Edit":
+                    try:
+                        win32gui.SendMessage(ctrl_hwnd, win32con.WM_GETTEXTLENGTH, 0, 0)
+                    except Exception:
+                        continue
+                    edit_hwnd = ctrl_hwnd
+                    logger.debug(f"找到文件名输入框(Edit)，ID: {hex(edit_id)}")
+                    break
+                if class_name == "ComboBox":
+                    # ComboBox 的编辑区需通过 GetComboBoxInfo 获取
+                    try:
+                        import ctypes
+                        from ctypes import wintypes
+                        CB_GETCOMBOBOXINFO = 0x0164
+                        class COMBOBOXINFO(ctypes.Structure):
+                            _fields_ = [
+                                ("cbSize", wintypes.DWORD),
+                                ("rcItem", wintypes.RECT),
+                                ("rcButton", wintypes.RECT),
+                                ("stateButton", wintypes.DWORD),
+                                ("hwndCombo", wintypes.HWND),
+                                ("hwndItem", wintypes.HWND),
+                                ("hwndList", wintypes.HWND),
+                            ]
+                        cbi = COMBOBOXINFO()
+                        cbi.cbSize = ctypes.sizeof(COMBOBOXINFO)
+                        if ctypes.windll.user32.GetComboBoxInfo(ctrl_hwnd, ctypes.byref(cbi)):
+                            edit_hwnd = cbi.hwndItem
+                            if edit_hwnd:
+                                logger.debug(f"找到文件名输入框(ComboBox子Edit)，ID: {hex(edit_id)}")
+                                break
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        
+        # 枚举子窗口查找 Edit
+        if not edit_hwnd:
+            found_edits = []
+
+            def enum_child_proc(hwnd, lParam):
+                class_name = win32gui.GetClassName(hwnd)
+                if class_name == "Edit":
+                    found_edits.append(hwnd)
+                return True
+
+            try:
+                win32gui.EnumChildWindows(dialog_hwnd, enum_child_proc, None)
+                if found_edits:
+                    # 取第一个或最后一个 Edit（文件名栏多为最后一个）
+                    edit_hwnd = found_edits[-1]
+                    logger.debug("通过枚举找到 Edit 控件")
+            except Exception:
+                pass
+        
+        if edit_hwnd:
+            # 通过控件设置路径
+            try:
+                win32gui.SetForegroundWindow(dialog_hwnd)
+                time.sleep(0.1)
+                win32gui.SendMessage(edit_hwnd, win32con.WM_SETTEXT, 0, abs_path)
+                time.sleep(0.2)
+                logger.debug(f"已输入文件路径(控件): {abs_path[:60]}...")
+            except Exception as e:
+                logger.warning(f"控件输入路径失败: {e}，尝试剪贴板粘贴")
+                edit_hwnd = None
+        
+        if not edit_hwnd:
+            # 回退：剪贴板粘贴路径 + Enter（多数文件对话框打开时焦点在文件名栏）
+            logger.debug("使用剪贴板粘贴路径并回车")
+            try:
+                win32gui.SetForegroundWindow(dialog_hwnd)
+                time.sleep(0.2)
+                pyperclip.copy(abs_path)
+                time.sleep(0.1)
+                pyautogui.hotkey("ctrl", "v")
+                time.sleep(0.3)
+                pyautogui.press("enter")
+                logger.debug("已粘贴路径并按 Enter")
+                time.sleep(0.5)
+                return True
+            except Exception as e:
+                raise ActionError(f"剪贴板粘贴路径失败: {e}")
+        
+        # 按 Enter 确认
+        try:
+            win32gui.SetForegroundWindow(dialog_hwnd)
+            win32gui.SendMessage(dialog_hwnd, win32con.WM_KEYDOWN, win32con.VK_RETURN, 0)
+            win32gui.SendMessage(dialog_hwnd, win32con.WM_KEYUP, win32con.VK_RETURN, 0)
+            logger.debug("已按 Enter 确认选择文件")
+            time.sleep(0.5)
+            return True
+        except Exception as e:
+            logger.warning(f"按 Enter 失败: {e}，尝试点击打开按钮")
+        
+        open_button_hwnd = None
+        for btn_id in (0x0001, 0x0002):
+            try:
+                btn_hwnd = win32gui.GetDlgItem(dialog_hwnd, btn_id)
+                if btn_hwnd:
+                    text_len = win32gui.SendMessage(btn_hwnd, win32con.WM_GETTEXTLENGTH, 0, 0)
+                    if text_len > 0:
+                        buffer = win32gui.PyMakeBuffer(text_len + 1)
+                        win32gui.SendMessage(btn_hwnd, win32con.WM_GETTEXT, text_len + 1, buffer)
+                        btn_text = win32gui.PyGetBuffer(buffer, text_len)
+                        if "打开" in btn_text or "Open" in btn_text:
+                            open_button_hwnd = btn_hwnd
+                            break
+            except Exception:
+                continue
+        
+        if open_button_hwnd:
+            win32gui.SendMessage(open_button_hwnd, win32con.BM_CLICK, 0, 0)
+            time.sleep(0.5)
+            return True
+        return True  # 已通过控件输入并尝试 Enter，视为完成
+    
+    except ActionError:
+        raise
+    except Exception as e:
+        error_msg = f"选择文件失败: {str(e)}"
         logger.error(error_msg)
         raise ActionError(error_msg)

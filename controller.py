@@ -66,7 +66,7 @@ from pathlib import Path
 
 # 支持相对导入（作为模块）和绝对导入（直接运行）
 try:
-    from .flows import send_text_to_contact, open_chat, send_message, read_new_messages
+    from .flows import send_text_to_contact, open_chat, send_message, read_new_messages, send_file_to_contact
     from .element_locator import has_new_message, save_chat_state, clear_chat_state, get_current_chat_hash
     from .screen import get_wechat_hwnd, get_dpi_scale, WindowNotFoundError, DPIError, ScreenshotError
     from .actions import ActionError
@@ -77,7 +77,7 @@ except ImportError:
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
-    from flows import send_text_to_contact, open_chat, send_message, read_new_messages
+    from flows import send_text_to_contact, open_chat, send_message, read_new_messages, send_file_to_contact
     from element_locator import has_new_message, save_chat_state, clear_chat_state, get_current_chat_hash
     from screen import get_wechat_hwnd, get_dpi_scale, WindowNotFoundError, DPIError, ScreenshotError
     from actions import ActionError
@@ -489,6 +489,61 @@ class WeChatController:
         except WeChatNotReadyError as e:
             logger.error(f"微信未准备就绪: {e.message}")
             raise
+    
+    def send_file(self, contact: str, file_path: str) -> ControllerResult:
+        """
+        发送文件/图片消息（驱动层方法）
+        
+        统一支持图片和普通文件，通过剪贴板复制粘贴发送。
+        如果需要消息状态管理，请使用 MessageChannel 层。
+        
+        Args:
+            contact: 联系人名称
+            file_path: 文件路径
+        
+        Returns:
+            控制器操作结果
+        
+        Raises:
+            WeChatNotReadyError: 微信未准备就绪
+            SendMessageError: 发送失败
+        """
+        try:
+            # 确保微信准备就绪
+            self._ensure_ready()
+            
+            logger.info(f"发送文件: {contact} -> {file_path}")
+            
+            # 调用流程
+            flow_result = send_file_to_contact(contact, file_path, self.config)
+            
+            if flow_result.success:
+                return ControllerResult(
+                    success=True,
+                    error_code=ErrorCode.SUCCESS,
+                    data={"contact": contact, "file_path": file_path},
+                    execution_time=flow_result.execution_time
+                )
+            else:
+                # 从流程结果中提取错误信息
+                error_code, error_msg = self._map_error_to_code(
+                    Exception(flow_result.error_message or "发送文件失败")
+                )
+                
+                return ControllerResult(
+                    success=False,
+                    error_code=error_code,
+                    error_message=error_msg,
+                    debug_path=flow_result.screenshot_path,
+                    execution_time=flow_result.execution_time
+                )
+        
+        except WeChatNotReadyError:
+            raise
+        except Exception as e:
+            error_code, error_msg = self._map_error_to_code(e)
+            logger.error(f"发送文件失败: {error_msg}")
+            raise SendMessageError(error_code, error_msg)
     
     def get_status(self) -> Dict[str, Any]:
         """

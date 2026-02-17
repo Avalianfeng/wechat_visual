@@ -447,15 +447,25 @@ class WeChatMessageChannel:
 
     def read_direct(self, contact: str) -> List[MessageEvent]:
         """
-        无锚点/无 hash 检查的直接读取：从当前页底部开始读满一屏消息并返回（先发→后发顺序）。
-        不更新锚点、不去重，适合「指定联系人、只要当前可见消息」的快速读取。
+        直接读当前可见页的新消息（不做 UI hash 预检，但用信息锚点做停止条件）。
+
+        - 读取时：从底部开始，用已有锚点（文本信息 hash）做停止条件，只读到锚点为止（新消息）。
+        - 无锚点时：从底部读满当前页，相当于首次或全量。
+        - 读完后：自动更新该联系人的画面区域 hash 与信息锚点，便于下次只读更新部分。
 
         调用方需保证已打开该联系人聊天窗口（如先 open_chat(contact)）。
         """
-        raw_messages = self._read_snapshot(contact, anchor_hash=None)
+        contact_stripped = contact.strip()
+        anchor_hash = self._anchor_hashes.get(contact_stripped)
+        if anchor_hash:
+            logger.info(f"[MessageChannel] read_direct 使用锚点停止: {contact}, anchor={anchor_hash[:16]}...")
+        else:
+            logger.info(f"[MessageChannel] read_direct 无锚点，读满当前页: {contact}")
+
+        raw_messages = self._read_snapshot(contact_stripped, anchor_hash=anchor_hash)
         events = [
             MessageEvent(
-                contact=contact,
+                contact=contact_stripped,
                 role="user",
                 content=raw.content,
                 timestamp=datetime.now(timezone.utc),
@@ -464,6 +474,26 @@ class WeChatMessageChannel:
             for raw in raw_messages
         ]
         events = list(reversed(events))
+
+        # 读完后更新信息锚点（最新一条的 hash）与画面 hash
+        if raw_messages:
+            new_anchor = raw_messages[0].hash
+            self._anchor_hashes[contact_stripped] = new_anchor
+            self._save_anchor_state()
+            if contact_stripped not in self._seen_hashes:
+                self._seen_hashes[contact_stripped] = set()
+            for raw in raw_messages:
+                self._seen_hashes[contact_stripped].add(raw.hash)
+            logger.info(f"[MessageChannel] read_direct 已更新锚点: {new_anchor[:16]}...")
+        try:
+            self.wechat.save_chat_state(contact_stripped)
+            h = self.wechat.get_current_chat_hash(contact_stripped)
+            if h:
+                self._save_visual_state(contact_stripped, h)
+                logger.info(f"[MessageChannel] read_direct 已更新画面 hash: {contact}, {h[:16]}...")
+        except Exception as e:
+            logger.warning(f"[MessageChannel] read_direct 更新画面状态失败: {e}")
+
         logger.info(f"[MessageChannel] read_direct 完成: {contact}, 共 {len(events)} 条")
         return events
     
@@ -504,6 +534,37 @@ class WeChatMessageChannel:
             return True
         else:
             logger.error(f"消息发送失败: {result.error_message}")
+            return False
+    
+    def send_file(self, contact: str, file_path: str) -> bool:
+        """
+        发送文件/图片消息（通过Controller，统一复制粘贴）
+        
+        Args:
+            contact: 联系人名称
+            file_path: 文件路径
+        
+        Returns:
+            是否发送成功
+        """
+        result = self.wechat.send_file(contact, file_path)
+        if result.success:
+            # 发送成功后，自动刷新该联系人的 UI hash（视觉基线）
+            try:
+                h = self.wechat.get_current_chat_hash(contact)
+                if h:
+                    self._save_visual_state(contact, h)
+                    logger.info(
+                        f"[MessageChannel] 已在发送文件后更新 UI hash: contact={contact}, hash={h[:16]}..."
+                    )
+            except Exception as e:
+                # 刷新视觉 hash 失败不影响发送结果，只做告警日志
+                logger.warning(f"[MessageChannel] 发送文件后更新 UI hash 失败: {e}")
+
+            logger.info(f"文件已发送: {contact} -> {file_path}")
+            return True
+        else:
+            logger.error(f"文件发送失败: {result.error_message}")
             return False
     
     def get_anchor_hash(self, contact: str) -> Optional[str]:

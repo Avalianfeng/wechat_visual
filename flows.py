@@ -45,6 +45,10 @@ try:
         wait,
         copy_text_at,
         scroll_chat_area_up,
+        copy_image_to_clipboard,
+        paste_image,
+        copy_file_or_image_to_clipboard,
+        paste_file_or_image,
     )
     import pyperclip
     from .element_locator import (
@@ -68,6 +72,10 @@ except ImportError:
         wait,
         copy_text_at,
         scroll_chat_area_up,
+        copy_image_to_clipboard,
+        paste_image,
+        copy_file_or_image_to_clipboard,
+        paste_file_or_image,
     )
     from element_locator import (
         locate_all_elements,
@@ -908,4 +916,161 @@ def get_initial_anchor(
             execution_time=execution_time,
             error_message=error_msg,
             data={"anchor_hash": None}
+        )
+
+
+def send_file(file_path: str, config: Optional[WeChatConfig] = None) -> FlowResult:
+    """
+    发送文件/图片消息（统一复制粘贴流程）
+    
+    支持图片（JPG/PNG/BMP/GIF 等）和普通文件（PDF/DOCX/MD 等）。
+    图片使用 CF_DIB，其他文件使用 CF_HDROP，均通过 Ctrl+V 粘贴后 Enter 发送。
+    
+    流程步骤：
+    1. 确保窗口在前台
+    2. 定位输入框
+    3. 点击输入框
+    4. 根据文件类型复制到剪贴板（图片 CF_DIB，文件 CF_HDROP）
+    5. 粘贴（Ctrl+V）
+    6. 等待加载后按 Enter 发送
+    7. 保存聊天状态
+    
+    Args:
+        file_path: 文件或图片路径
+        config: 配置对象，None则使用默认配置
+    
+    Returns:
+        流程执行结果
+    """
+    start_time = time.time()
+    task_type = TaskType.SEND_MESSAGE
+    
+    try:
+        try:
+            hwnd = get_wechat_hwnd()
+            logger.debug(f"获取到窗口句柄: {hwnd}")
+        except Exception as e:
+            raise Exception(f"获取微信窗口句柄失败: {str(e)}，请确保微信已打开")
+        
+        logger.info(f"开始发送文件: {file_path}")
+        
+        if not activate_window(None):
+            logger.warning("首次激活窗口失败，尝试重新获取句柄")
+            hwnd = get_wechat_hwnd()
+            if not activate_window(hwnd):
+                raise Exception("激活窗口失败，请确保微信窗口可见且未被其他程序遮挡")
+        human_delay(0.2, 0.3)
+        
+        screenshot = capture_window(hwnd)
+        positions = locate_all_elements(screenshot)
+        
+        input_box_result = _first_locate_result(positions.get("input_box_anchor"))
+        if not input_box_result or not getattr(input_box_result, "success", False):
+            raise Exception("未找到输入框，可能不在聊天界面")
+        ib_x, ib_y = getattr(input_box_result, "x", None), getattr(input_box_result, "y", None)
+        if ib_x is None or ib_y is None:
+            raise Exception("输入框位置无效（x 或 y 为空）")
+        
+        if not click(ib_x, ib_y, hwnd):
+            raise Exception("点击输入框失败")
+        human_delay(0.3, 0.4)
+        
+        if not copy_file_or_image_to_clipboard(file_path):
+            raise Exception("复制文件/图片到剪贴板失败")
+        human_delay(0.1, 0.15)
+        
+        if not paste_file_or_image(hwnd):
+            raise Exception("粘贴失败")
+        human_delay(0.5, 1.0)
+        
+        if not hotkey("enter", hwnd=hwnd):
+            raise Exception("按 Enter 失败")
+        human_delay(0.5, 0.8)
+        
+        try:
+            save_chat_state()
+        except Exception as e:
+            logger.warning(f"保存聊天状态失败: {e}，不影响发送")
+        
+        execution_time = time.time() - start_time
+        logger.info(f"成功发送文件，耗时: {execution_time:.2f}秒")
+        
+        return FlowResult(
+            success=True,
+            task_type=task_type,
+            execution_time=execution_time,
+            data={"file_path": file_path},
+        )
+    
+    except Exception as e:
+        execution_time = time.time() - start_time
+        error_msg = f"发送文件失败: {str(e)}"
+        logger.error(error_msg)
+        return FlowResult(
+            success=False,
+            task_type=task_type,
+            execution_time=execution_time,
+            error_message=error_msg,
+        )
+
+
+def send_file_to_contact(
+    contact_name: str, file_path: str, config: Optional[WeChatConfig] = None
+) -> FlowResult:
+    """
+    向指定联系人发送文件消息（组合流程）
+    
+    流程步骤：
+    1. 打开聊天窗口
+    2. 发送文件
+    
+    Args:
+        contact_name: 联系人名称
+        file_path: 文件路径
+        config: 配置对象，None则使用默认配置
+    
+    Returns:
+        流程执行结果
+    """
+    start_time = time.time()
+    task_type = TaskType.SEND_MESSAGE
+    
+    try:
+        logger.info(f"开始向 {contact_name} 发送文件: {file_path}")
+        
+        # 步骤1: 打开聊天窗口
+        open_result = open_chat(contact_name, config)
+        if not open_result.success:
+            raise Exception(f"打开聊天窗口失败: {open_result.error_message}")
+        
+        # 步骤2: 发送文件
+        send_result = send_file(file_path, config)
+        if not send_result.success:
+            raise Exception(f"发送文件失败: {send_result.error_message}")
+        
+        execution_time = time.time() - start_time
+        logger.info(f"成功向 {contact_name} 发送文件，总耗时: {execution_time:.2f}秒")
+        
+        return FlowResult(
+            success=True,
+            task_type=task_type,
+            execution_time=execution_time,
+            data={
+                "contact_name": contact_name,
+                "file_path": file_path,
+                "open_chat_time": open_result.execution_time,
+                "send_file_time": send_result.execution_time
+            }
+        )
+    
+    except Exception as e:
+        execution_time = time.time() - start_time
+        error_msg = f"向 {contact_name} 发送文件失败: {str(e)}"
+        logger.error(error_msg)
+        
+        return FlowResult(
+            success=False,
+            task_type=task_type,
+            execution_time=execution_time,
+            error_message=error_msg
         )
