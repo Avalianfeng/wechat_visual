@@ -38,7 +38,7 @@ Windows；微信 PC 已登录、窗口可见；界面简体中文，窗口 ≥ 8
 ### 1. 克隆与依赖
 
 ```bash
-git clone <你的仓库地址>
+git clone https://github.com/Avalianfeng/wechat_visual
 cd wechat
 python -m venv .venv
 .venv\Scripts\activate
